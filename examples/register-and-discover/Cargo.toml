@@ -1,0 +1,7 @@
+[package]
+name = "register-and-discover"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+zeroconf-tokio = { path = "../../zeroconf-tokio" }

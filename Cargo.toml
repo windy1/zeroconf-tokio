@@ -1,2 +1,3 @@
 [workspace]
-members = ["zeroconf-tokio"]
+members = [ "examples/register-and-discover","zeroconf-tokio"]
+resolver = "2"
