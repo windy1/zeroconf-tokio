@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.39.1", features = ["rt"] }
-zeroconf = { path = "../zeroconf-rs/zeroconf" }
+zeroconf = { path = "../../zeroconf-rs/zeroconf" }
