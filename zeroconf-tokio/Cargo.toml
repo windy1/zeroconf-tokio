@@ -8,3 +8,6 @@ log = "0.4.22"
 tokio = { version = "1.39.1", features = ["rt", "sync", "macros", "rt-multi-thread"] }
 tokio-util = "0.7.11"
 zeroconf = { path = "../../zeroconf-rs/zeroconf" }
+
+[dev-dependencies]
+ntest = "0.9.3"

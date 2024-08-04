@@ -1,44 +1,43 @@
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::sync::mpsc;
+//! Asynchronous mDNS browser.
+
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 
-use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
+use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 use zeroconf::prelude::*;
 use zeroconf::MdnsBrowser;
 use zeroconf::ServiceDiscovery;
 
-type Sender = mpsc::SyncSender<zeroconf::Result<ServiceDiscovery>>;
+use crate::event_processor::EventProcessor;
+
+type Sender = mpsc::Sender<zeroconf::Result<ServiceDiscovery>>;
 type Receiver = mpsc::Receiver<zeroconf::Result<ServiceDiscovery>>;
 
+/// Asynchronous mDNS browser.
 pub struct MdnsBrowserAsync {
     inner: MdnsBrowser,
-    timeout: Duration,
+    event_processor: EventProcessor,
     sender: Arc<Mutex<Sender>>,
-    receiver: Arc<Mutex<Receiver>>,
-    running: Arc<AtomicBool>,
-    join_handle: Option<JoinHandle<()>>,
+    receiver: Receiver,
 }
 
 impl MdnsBrowserAsync {
-    pub fn new(browser: MdnsBrowser, timeout: Option<Duration>) -> zeroconf::Result<Self> {
-        let (sender, receiver) = mpsc::sync_channel(0);
+    /// Create a new asynchronous mDNS browser.
+    pub fn new(browser: MdnsBrowser) -> zeroconf::Result<Self> {
+        let (sender, receiver) = mpsc::channel(1);
 
         Ok(Self {
             inner: browser,
-            timeout: timeout.unwrap_or(Duration::from_secs(0)),
+            event_processor: EventProcessor::new(),
             sender: Arc::new(Mutex::new(sender)),
-            receiver: Arc::new(Mutex::new(receiver)),
-            running: Arc::default(),
-            join_handle: None,
+            receiver,
         })
     }
 
-    pub async fn start(&mut self) -> zeroconf::Result<()> {
-        if self.running.load(Ordering::Relaxed) {
+    /// Start the browser with a timeout passed to the [`zeroconf::EventLoop`].
+    pub async fn start_with_timeout(&mut self, timeout: Duration) -> zeroconf::Result<()> {
+        if self.event_processor.is_running() {
             return Err("Browser already running".into());
         }
 
@@ -47,95 +46,46 @@ impl MdnsBrowserAsync {
         let sender = self.sender.clone();
 
         let callback = Box::new(move |result, _| {
-            // send the result to the sync channel
-            // note: a normal mpsc does not work here because the callback is
-            // not yet in an async context, so we use a sync channel to
-            // "rendezvous" with the next `next()` call and forward it to a
-            // oneshot channel from there
             debug!("Received service discovery: {:?}", result);
-            sender
-                .lock()
-                .expect("should have been able to lock sender")
-                .send(result)
-                .expect("should have been able to send result");
+            let sender = sender.clone();
+            tokio::spawn(async move { sender.lock().await.send(result).await });
         });
 
         self.inner.set_service_discovered_callback(callback);
 
         let event_loop = self.inner.browse_services()?;
-        let timeout = self.timeout;
-        let running = self.running.clone();
-
-        running.store(true, Ordering::Relaxed);
-
-        self.join_handle = Some(tokio::spawn(async move {
-            while running.load(Ordering::Relaxed) {
-                event_loop
-                    .poll(timeout)
-                    .expect("should have been able to poll event loop");
-            }
-
-            info!("Browser shutdown");
-        }));
+        self.event_processor
+            .start_with_timeout(event_loop, timeout)?;
 
         Ok(())
     }
 
+    /// Start the browser.
+    pub async fn start(&mut self) -> zeroconf::Result<()> {
+        self.start_with_timeout(Duration::ZERO).await
+    }
+
+    /// Get the next discovered service or `None` if the browser is not running.
     pub async fn next(&mut self) -> Option<zeroconf::Result<ServiceDiscovery>> {
-        if !self.running.load(Ordering::Relaxed) {
+        if !self.event_processor.is_running() {
             return None;
         }
 
-        let (sender, receiver) = oneshot::channel();
-        let tx_sync = self.receiver.clone();
-
-        tokio::spawn(async move {
-            // receive the result from the sync channel used in the callback and
-            // forward to the oneshot channel that is awaited by this function
-            let result = tx_sync.lock().unwrap().recv().unwrap();
-            sender.send(result).unwrap();
-        });
-
-        Some(receiver.await.unwrap())
+        self.receiver.recv().await
     }
 
-    pub async fn shutdown(&mut self) {
-        if !self.running.load(Ordering::Relaxed) {
-            warn!("Attempted to shutdown browser that is not running");
-            return;
-        }
-
-        info!("Shutting down async mDNS browser: {:?}", self.inner);
-
-        self.running.store(false, Ordering::Relaxed);
-
-        // unwind the main event loop and continue processing events to unblock
-        // the task until it is able to complete
-        let unwound = Arc::new(Mutex::new(AtomicBool::default()));
-        let unwound_clone = unwound.clone();
-        let rx = self.receiver.clone();
-
-        tokio::spawn(async move {
-            while !unwound_clone.lock().unwrap().load(Ordering::Relaxed) {
-                // discard any results waiting in the sync channel
-                let _ = rx.lock().unwrap().try_recv();
-            }
-        });
-
-        // await on the task to complete
-        if let Some(join_handle) = self.join_handle.take() {
-            join_handle
-                .await
-                .expect("should be able to join on the task");
-        }
-
-        unwound.lock().unwrap().store(true, Ordering::Relaxed);
-        self.join_handle = None;
+    /// Shutdown the browser.
+    pub async fn shutdown(&mut self) -> zeroconf::Result<()> {
+        info!("Shutting down browser...");
+        self.event_processor.shutdown().await?;
+        info!("Browser shut down");
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use ntest::timeout;
     use zeroconf::prelude::*;
     use zeroconf::MdnsService;
     use zeroconf::ServiceType;
@@ -144,21 +94,143 @@ mod tests {
 
     use super::*;
 
+    struct Fixture {
+        services: Vec<MdnsServiceAsync>,
+        browser: MdnsBrowserAsync,
+    }
+
+    impl Fixture {
+        fn new(services: Vec<MdnsServiceAsync>, browser: MdnsBrowserAsync) -> Self {
+            Self { services, browser }
+        }
+
+        fn with_single_service() -> Self {
+            let service_type = ServiceType::new("http", "tcp").unwrap();
+            let mut service = MdnsService::new(service_type.clone(), 8080);
+
+            service.set_name("test_service".into());
+
+            Self::new(
+                vec![MdnsServiceAsync::new(service).unwrap()],
+                MdnsBrowserAsync::new(MdnsBrowser::new(service_type)).unwrap(),
+            )
+        }
+
+        async fn start(&mut self) -> zeroconf::Result<()> {
+            for service in self.services.iter_mut() {
+                service.start().await?;
+            }
+
+            self.browser.start().await
+        }
+
+        async fn shutdown(&mut self) {
+            self.browser.shutdown().await.unwrap();
+
+            for service in self.services.iter_mut() {
+                service.shutdown().await.unwrap();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn it_discovers() {
+        let mut fixture = Fixture::with_single_service();
+
+        fixture.start().await.unwrap();
+
+        let discovered_service = fixture.browser.next().await.unwrap().unwrap();
+        let service_type = discovered_service.service_type();
+
+        assert_eq!(discovered_service.name(), "test_service");
+        assert_eq!(service_type.name(), "http");
+        assert_eq!(service_type.protocol(), "tcp");
+        assert_eq!(discovered_service.port(), &8080);
+
+        fixture.shutdown().await;
+    }
+
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_browser() {
+    async fn it_discovers_multi_thread() {
+        let mut fixture = Fixture::with_single_service();
+        fixture.start().await.unwrap();
+
+        let discovered_service = fixture.browser.next().await.unwrap().unwrap();
+        let service_type = discovered_service.service_type();
+
+        assert_eq!(discovered_service.name(), "test_service");
+        assert_eq!(service_type.name(), "http");
+        assert_eq!(service_type.protocol(), "tcp");
+        assert_eq!(discovered_service.port(), &8080);
+
+        fixture.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn it_drops_without_shutdown_gracefully() {
+        let mut fixture = Fixture::with_single_service();
+        fixture.start().await.unwrap();
+
+        let discovered_service = fixture.browser.next().await.unwrap().unwrap();
+        let service_type = discovered_service.service_type();
+
+        assert_eq!(discovered_service.name(), "test_service");
+        assert_eq!(service_type.name(), "http");
+        assert_eq!(service_type.protocol(), "tcp");
+        assert_eq!(discovered_service.port(), &8080);
+    }
+
+    #[tokio::test]
+    #[timeout(10000)]
+    async fn it_discovers_n_services() {
         let service_type = ServiceType::new("http", "tcp").unwrap();
-        let service = MdnsService::new(service_type.clone(), 8080);
-        let mut service = MdnsServiceAsync::new(service, None).unwrap();
+        let mut service1 = MdnsService::new(service_type.clone(), 8080);
+        let mut service2 = MdnsService::new(service_type.clone(), 8081);
 
-        service.start().await.unwrap();
+        service1.set_name("test_service_1".into());
+        service2.set_name("test_service_2".into());
 
-        let browser = MdnsBrowser::new(service_type);
-        let mut browser = MdnsBrowserAsync::new(browser, None).unwrap();
+        let services = vec![
+            MdnsServiceAsync::new(service1).unwrap(),
+            MdnsServiceAsync::new(service2).unwrap(),
+        ];
 
-        browser.start().await.unwrap();
+        let browser = MdnsBrowserAsync::new(MdnsBrowser::new(service_type)).unwrap();
+        let mut fixture = Fixture::new(services, browser);
+        let mut service1_discovered = false;
+        let mut service2_discovered = false;
 
-        let discovered_service = browser.next().await.unwrap().unwrap();
+        while let Some(Ok(service)) = fixture.browser.next().await {
+            if service1_discovered && service2_discovered {
+                break;
+            }
 
-        println!("Discovered service: {:?}", discovered_service);
+            if service.name() == "test_service_1" {
+                service1_discovered = true;
+            } else if service.name() == "test_service_2" {
+                service2_discovered = true;
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn it_cannot_start_if_already_running() {
+        let mut fixture = Fixture::with_single_service();
+        fixture.start().await.unwrap();
+
+        let result = fixture.browser.start().await;
+
+        assert!(result.is_err());
+
+        fixture.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn it_cannot_discover_if_not_running() {
+        let mut fixture = Fixture::with_single_service();
+
+        let result = fixture.browser.next().await;
+
+        assert!(result.is_none());
     }
 }

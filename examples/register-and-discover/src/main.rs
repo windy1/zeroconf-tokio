@@ -44,20 +44,20 @@ async fn main() -> zeroconf_tokio::Result<()> {
     service.set_name("zeroconf_example_service");
     service.set_txt_record(txt_record);
 
-    let mut service = MdnsServiceAsync::new(service, None)?;
+    let mut service = MdnsServiceAsync::new(service)?;
 
     let result = service.start().await?;
 
     info!("Registered service: {:?}", result);
 
-    let mut browser = MdnsBrowserAsync::new(MdnsBrowser::new(service_type), None)?;
+    let mut browser = MdnsBrowserAsync::new(MdnsBrowser::new(service_type))?;
 
     browser.start().await?;
 
     while let Some(Ok(discovery)) = browser.next().await {
         info!("Discovered service: {:?}", discovery);
-        service.shutdown().await;
-        browser.shutdown().await;
+        service.shutdown().await.unwrap();
+        browser.shutdown().await.unwrap();
     }
 
     Ok(())
