@@ -1,7 +1,12 @@
 [package]
 name = "zeroconf-tokio"
 version = "0.1.0"
+authors = ["Walker Crouse <walkercrouse@hotmail.com>"]
 edition = "2021"
+description = "zeroconf-tokio is a Tokio-based wrapper around the zeroconf crate, which provides mDNS service discovery and registration capabilities."
+repository = "https://github.com/windy1/zeroconf-tokio"
+keywords = ["zeroconf", "mdns", "avahi", "bonjour", "dnssd", "tokio"]
+categories = ["asynchronous", "network-programming"]
 
 [dependencies]
 log = "0.4.22"
