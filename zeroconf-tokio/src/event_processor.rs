@@ -12,6 +12,7 @@ use tokio::task::JoinHandle;
 use zeroconf::{prelude::*, EventLoop};
 
 /// Event processor for mDNS event loop.
+#[derive(Default)]
 pub struct EventProcessor {
     running: Arc<AtomicBool>,
     join_handle: Option<JoinHandle<()>>,

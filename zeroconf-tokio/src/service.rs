@@ -90,7 +90,7 @@ mod tests {
             let service_type = ServiceType::new("http", "tcp").unwrap();
             let mut service = MdnsService::new(service_type, 8080);
 
-            service.set_name("test_service".into());
+            service.set_name("test_service");
 
             Self {
                 service: MdnsServiceAsync::new(service).unwrap(),
