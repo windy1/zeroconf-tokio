@@ -1,6 +1,6 @@
 [package]
 name = "zeroconf-tokio"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Walker Crouse <walkercrouse@hotmail.com>"]
 edition = "2021"
 description = "zeroconf-tokio is a Tokio-based wrapper around the zeroconf crate, which provides mDNS service discovery and registration capabilities."
