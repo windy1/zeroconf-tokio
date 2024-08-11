@@ -1,0 +1,58 @@
+name: Rust
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  macOS:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare
+        run: rustup component add clippy
+      - name: Build
+        run: cargo build
+      - name: Check Formatting
+        run: cargo fmt --check
+      - name: Lint
+        run: cargo clippy
+      - name: Test
+        run: cargo test
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare
+        run: |
+          rustup component add clippy
+          sudo apt -y install avahi-daemon libavahi-client-dev
+          sudo systemctl start avahi-daemon.service
+      - name: Build
+        run: cargo build
+      - name: Check Formatting
+        run: cargo fmt --check
+      - name: Lint
+        run: cargo clippy
+      - name: Test
+        run: cargo test
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare
+        run: |
+          choco install -y bonjour
+          rustup component add clippy
+      - name: Build
+        run: cargo build
+      - name: Check Formatting
+        run: cargo fmt --check
+      - name: Lint
+        run: cargo clippy
+      - name: Test
+        run: cargo test
