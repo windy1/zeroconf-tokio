@@ -108,7 +108,7 @@ mod tests {
             let service_type = ServiceType::new("http", "tcp").unwrap();
             let mut service = MdnsService::new(service_type.clone(), 8080);
 
-            service.set_name("test_service".into());
+            service.set_name("test_service");
 
             Self::new(
                 vec![MdnsServiceAsync::new(service).unwrap()],
@@ -187,8 +187,8 @@ mod tests {
         let mut service1 = MdnsService::new(service_type.clone(), 8080);
         let mut service2 = MdnsService::new(service_type.clone(), 8081);
 
-        service1.set_name("test_service_1".into());
-        service2.set_name("test_service_2".into());
+        service1.set_name("test_service_1");
+        service2.set_name("test_service_2");
 
         let services = vec![
             MdnsServiceAsync::new(service1).unwrap(),
