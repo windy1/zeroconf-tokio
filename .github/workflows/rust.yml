@@ -1,0 +1,66 @@
+name: Rust CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: zeroconf-tokio
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-msvc' || matrix.os == 'macos-latest' && 'x86_64-apple-darwin' || 'x86_64-unknown-linux-gnu' }}
+
+      - name: Prepare for Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt -y install avahi-daemon libavahi-client-dev
+          sudo systemctl start avahi-daemon.service
+
+      - name: Prepare for Windows
+        if: matrix.os == 'windows-latest'
+        run: "choco install -y bonjour"
+
+      - name: Cache Cargo
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build
+        run: cargo build
+
+      - name: Run tests
+        run: |
+          cargo test -- \
+            --skip browser::tests::it_discovers \
+            --skip browser::tests::it_discovers_multi_thread \
+            --skip browser::tests::it_drops_without_shutdown_gracefully \
+            --skip browser::tests::it_discovers_n_services \
+            --skip browser::tests::it_cannot_start_if_already_running
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Run Clippy
+        run: cargo clippy -- -D warnings

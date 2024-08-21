@@ -1,12 +1,8 @@
 //! Event processor for mDNS event loop.
 
-use std::{
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::task::JoinHandle;
 use zeroconf::{prelude::*, EventLoop};
@@ -21,10 +17,7 @@ pub struct EventProcessor {
 impl EventProcessor {
     /// Create a new event processor.
     pub fn new() -> Self {
-        Self {
-            running: Arc::default(),
-            join_handle: None,
-        }
+        Self::default()
     }
 
     /// Check if the event processor is running.
@@ -80,8 +73,6 @@ impl EventProcessor {
                 .await
                 .expect("should be able to join on the task");
         }
-
-        self.join_handle = None;
 
         debug!("mDNS event processor shut down");
 

@@ -52,6 +52,7 @@ impl MdnsServiceAsync {
         self.inner.set_registered_callback(callback);
 
         let event_loop = self.inner.register()?;
+
         self.event_processor
             .start_with_timeout(event_loop, timeout)?;
 
