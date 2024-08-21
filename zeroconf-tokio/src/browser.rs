@@ -54,6 +54,7 @@ impl MdnsBrowserAsync {
         self.inner.set_service_discovered_callback(callback);
 
         let event_loop = self.inner.browse_services()?;
+
         self.event_processor
             .start_with_timeout(event_loop, timeout)?;
 
