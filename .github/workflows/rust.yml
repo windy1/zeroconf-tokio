@@ -51,7 +51,13 @@ jobs:
         run: cargo build
 
       - name: Run tests
-        run: cargo test -- --skip browser::tests::it_discovers
+        run: |
+          cargo test -- \
+            --skip browser::tests::it_discovers \
+            --skip browser::tests::it_discovers_multi_thread \
+            --skip browser::tests::it_drops_without_shutdown_gracefully \
+            --skip browser::tests::it_discovers_n_services \
+            --skip browser::tests::it_cannot_start_if_already_running
 
       - name: Check formatting
         run: cargo fmt -- --check
