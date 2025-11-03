@@ -75,6 +75,12 @@ impl MdnsServiceAsync {
     }
 }
 
+impl Drop for MdnsServiceAsync {
+    fn drop(&mut self) {
+        self.event_processor.sync_shutdown();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

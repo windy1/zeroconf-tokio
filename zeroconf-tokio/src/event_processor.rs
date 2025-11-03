@@ -87,6 +87,18 @@ impl EventProcessor {
 
         Ok(())
     }
+
+    pub(crate) fn sync_shutdown(&mut self) {
+        self.running.store(false, Ordering::Relaxed);
+
+        if let Some(join_handle) = self.join_handle.take() {
+            join_handle.abort();
+
+            while !join_handle.is_finished() {
+                std::hint::spin_loop();
+            }
+        }
+    }
 }
 
 #[cfg(test)]
