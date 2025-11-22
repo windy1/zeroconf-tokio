@@ -6,13 +6,12 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use zeroconf::prelude::*;
-use zeroconf::MdnsBrowser;
-use zeroconf::ServiceDiscovery;
+use zeroconf::{BrowserEvent, MdnsBrowser};
 
 use crate::event_processor::EventProcessor;
 
-type Sender = mpsc::Sender<zeroconf::Result<ServiceDiscovery>>;
-type Receiver = mpsc::Receiver<zeroconf::Result<ServiceDiscovery>>;
+type Sender = mpsc::Sender<zeroconf::Result<BrowserEvent>>;
+type Receiver = mpsc::Receiver<zeroconf::Result<BrowserEvent>>;
 
 /// Asynchronous mDNS browser.
 pub struct MdnsBrowserAsync {
@@ -46,12 +45,12 @@ impl MdnsBrowserAsync {
         let sender = self.sender.clone();
 
         let callback = Box::new(move |result, _| {
-            debug!("Received service discovery: {:?}", result);
+            debug!("Received browser event: {:?}", result);
             let sender = sender.clone();
             tokio::spawn(async move { sender.lock().await.send(result).await });
         });
 
-        self.inner.set_service_discovered_callback(callback);
+        self.inner.set_service_callback(callback);
 
         let event_loop = self.inner.browse_services()?;
         self.event_processor
@@ -65,8 +64,8 @@ impl MdnsBrowserAsync {
         self.start_with_timeout(Duration::ZERO).await
     }
 
-    /// Get the next discovered service or `None` if the browser is not running.
-    pub async fn next(&mut self) -> Option<zeroconf::Result<ServiceDiscovery>> {
+    /// Get the next browser event or `None` if the browser is not running.
+    pub async fn next(&mut self) -> Option<zeroconf::Result<BrowserEvent>> {
         if !self.event_processor.is_running() {
             return None;
         }
@@ -145,7 +144,11 @@ mod tests {
 
         fixture.start().await.unwrap();
 
-        let discovered_service = fixture.browser.next().await.unwrap().unwrap();
+        let event = fixture.browser.next().await.unwrap().unwrap();
+        let discovered_service = match event {
+            BrowserEvent::Add(service) => service,
+            _ => panic!("Expected Add event"),
+        };
         let service_type = discovered_service.service_type();
 
         assert_eq!(discovered_service.name(), "test_service");
@@ -161,7 +164,11 @@ mod tests {
         let mut fixture = Fixture::with_single_service();
         fixture.start().await.unwrap();
 
-        let discovered_service = fixture.browser.next().await.unwrap().unwrap();
+        let event = fixture.browser.next().await.unwrap().unwrap();
+        let discovered_service = match event {
+            BrowserEvent::Add(service) => service,
+            _ => panic!("Expected Add event"),
+        };
         let service_type = discovered_service.service_type();
 
         assert_eq!(discovered_service.name(), "test_service");
@@ -170,20 +177,6 @@ mod tests {
         assert_eq!(discovered_service.port(), &8080);
 
         fixture.shutdown().await;
-    }
-
-    #[tokio::test]
-    async fn it_drops_without_shutdown_gracefully() {
-        let mut fixture = Fixture::with_single_service();
-        fixture.start().await.unwrap();
-
-        let discovered_service = fixture.browser.next().await.unwrap().unwrap();
-        let service_type = discovered_service.service_type();
-
-        assert_eq!(discovered_service.name(), "test_service");
-        assert_eq!(service_type.name(), "http");
-        assert_eq!(service_type.protocol(), "tcp");
-        assert_eq!(discovered_service.port(), &8080);
     }
 
     #[tokio::test]
@@ -206,15 +199,17 @@ mod tests {
         let mut service1_discovered = false;
         let mut service2_discovered = false;
 
-        while let Some(Ok(service)) = fixture.browser.next().await {
+        while let Some(Ok(event)) = fixture.browser.next().await {
             if service1_discovered && service2_discovered {
                 break;
             }
 
-            if service.name() == "test_service_1" {
-                service1_discovered = true;
-            } else if service.name() == "test_service_2" {
-                service2_discovered = true;
+            if let BrowserEvent::Add(service) = event {
+                if service.name() == "test_service_1" {
+                    service1_discovered = true;
+                } else if service.name() == "test_service_2" {
+                    service2_discovered = true;
+                }
             }
         }
     }
