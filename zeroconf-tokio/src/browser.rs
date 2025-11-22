@@ -83,6 +83,12 @@ impl MdnsBrowserAsync {
     }
 }
 
+impl Drop for MdnsBrowserAsync {
+    fn drop(&mut self) {
+        self.event_processor.sync_shutdown();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ntest::timeout;
