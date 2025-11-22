@@ -695,26 +695,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde"
-version = "1.0.204"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc76f558e0cbb2a839d37354c575f1dc3fdc6546b5be373ba43d95f231bf7c12"
-dependencies = [
- "serde_derive",
-]
-
-[[package]]
-name = "serde_derive"
-version = "1.0.204"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0cd7e117be63d3c3678776753929474f3b04a43a080c744d6b0ae2a8c28e222"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.72",
-]
-
-[[package]]
 name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -914,9 +894,9 @@ dependencies = [
 
 [[package]]
 name = "zeroconf"
-version = "0.15.0"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cb02959b84222ea15aae34b32d981a5c37dcf423d096e788ab39b851dc4b288"
+checksum = "c4c29fe84893c2abecd7e205bd45bd5e4e7f8c130a8304bc4a5a7ea7244fe7f7"
 dependencies = [
  "avahi-sys",
  "bonjour-sys",
@@ -925,7 +905,6 @@ dependencies = [
  "derive_builder",
  "libc",
  "log",
- "serde",
  "zeroconf-macros",
 ]
 
