@@ -3,8 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc;
 use zeroconf::prelude::*;
 use zeroconf::{BrowserEvent, MdnsBrowser};
 
@@ -91,9 +91,9 @@ impl Drop for MdnsBrowserAsync {
 #[cfg(test)]
 mod tests {
     use ntest::timeout;
-    use zeroconf::prelude::*;
     use zeroconf::MdnsService;
     use zeroconf::ServiceType;
+    use zeroconf::prelude::*;
 
     use crate::MdnsServiceAsync;
 
