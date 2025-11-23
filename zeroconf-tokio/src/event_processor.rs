@@ -2,14 +2,14 @@
 
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
 
 use tokio::task::JoinHandle;
-use zeroconf::{prelude::*, EventLoop};
+use zeroconf::{EventLoop, prelude::*};
 
 /// Event processor for mDNS event loop.
 #[derive(Default)]
