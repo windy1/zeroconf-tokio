@@ -11,19 +11,37 @@ use std::{
 use tokio::task::JoinHandle;
 use zeroconf::{EventLoop, prelude::*};
 
+const DEFAULT_MIN_POLL_TIMEOUT: Duration = Duration::from_millis(50);
+
 /// Event processor for mDNS event loop.
-#[derive(Default)]
 pub struct EventProcessor {
     running: Arc<AtomicBool>,
     join_handle: Option<JoinHandle<()>>,
+    min_poll_timeout: Duration,
+}
+
+impl Default for EventProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EventProcessor {
-    /// Create a new event processor.
+    /// Create a new event processor with the default minimum poll timeout of 50ms.
     pub fn new() -> Self {
+        Self::with_min_timeout(DEFAULT_MIN_POLL_TIMEOUT)
+    }
+
+    /// Create a new event processor with the specified minimum poll timeout.
+    ///
+    /// The minimum poll timeout prevents busy-looping when the poll timeout passed to
+    /// [`start_with_timeout`] is very short or on platforms where `poll()` may return
+    /// immediately.
+    pub fn with_min_timeout(min_poll_timeout: Duration) -> Self {
         Self {
             running: Arc::default(),
             join_handle: None,
+            min_poll_timeout,
         }
     }
 
@@ -48,12 +66,17 @@ impl EventProcessor {
 
         running.store(true, Ordering::Relaxed);
 
-        self.join_handle = Some(tokio::spawn(async move {
+        let min_poll_timeout = self.min_poll_timeout;
+
+        self.join_handle = Some(tokio::task::spawn_blocking(move || {
             while running.load(Ordering::Relaxed) {
                 event_loop
                     .poll(timeout)
                     .expect("should have been able to poll event loop");
-                tokio::task::yield_now().await;
+
+                if timeout < min_poll_timeout {
+                    std::thread::sleep(min_poll_timeout - timeout);
+                }
             }
         }));
 
