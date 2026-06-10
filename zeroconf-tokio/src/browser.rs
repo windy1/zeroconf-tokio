@@ -1,8 +1,12 @@
 //! Asynchronous mDNS browser.
 
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::Context;
+use std::task::Poll;
 use std::time::Duration;
 
+use futures::Stream;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use zeroconf::prelude::*;
@@ -64,21 +68,27 @@ impl MdnsBrowserAsync {
         self.start_with_timeout(Duration::ZERO).await
     }
 
-    /// Get the next browser event or `None` if the browser is not running.
-    pub async fn next(&mut self) -> Option<zeroconf::Result<BrowserEvent>> {
-        if !self.event_processor.is_running() {
-            return None;
-        }
-
-        self.receiver.recv().await
-    }
-
     /// Shutdown the browser.
     pub async fn shutdown(&mut self) -> zeroconf::Result<()> {
         info!("Shutting down browser...");
         self.event_processor.shutdown().await?;
         info!("Browser shut down");
         Ok(())
+    }
+}
+
+impl Stream for MdnsBrowserAsync {
+    type Item = zeroconf::Result<BrowserEvent>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        if !this.event_processor.is_running() {
+            return Poll::Ready(None);
+        }
+        if let Poll::Ready(event) = this.receiver.poll_recv(cx) {
+            return Poll::Ready(event);
+        }
+        Poll::Pending
     }
 }
 
@@ -90,6 +100,7 @@ impl Drop for MdnsBrowserAsync {
 
 #[cfg(test)]
 mod tests {
+    use futures::StreamExt;
     use ntest::timeout;
     use zeroconf::MdnsService;
     use zeroconf::ServiceType;
