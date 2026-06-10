@@ -2,6 +2,7 @@
 extern crate log;
 
 use clap::Parser;
+use futures::StreamExt;
 use zeroconf_tokio::prelude::*;
 use zeroconf_tokio::{
     BrowserEvent, MdnsBrowser, MdnsBrowserAsync, MdnsService, MdnsServiceAsync, ServiceType,
